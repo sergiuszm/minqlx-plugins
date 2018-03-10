@@ -570,22 +570,7 @@ class mybalance(iouonegirlPlugin):
         if self.game.state in ["in_progress", "countdown"]: return
         self.game_active = False
         self.checking_balance = False
-        self.display_info(time.time(), self.game.map)
         self.check_warmup(time.time(), self.game.map)
-
-    @minqlx.thread
-    def display_info(self, warmup, mapname):
-        while all([self.game.state == "warmup", self.game.map == mapname, self.warmup_reminders, self.__class__.__name__ in minqlx.Plugin._loaded_plugins, len(self.teams()['red']+self.teams()['blue']) > 1]):
-            diff = time.time() - warmup # difference in seconds
-            if diff >= int(self.get_cvar('qlx_mybalance_info_seconds')):
-                m = "^7Od 21.02.2018 ^3serwery beda na haslo! "
-                m += "\n^2Skladka 10 zl/msc od osoby. "
-                m += "\n^4Wiecej info na https://fb.me/CellsServer"
-                self.msg(m.replace('\n', ''))
-                self.center_print(m)
-                time.sleep(int(self.get_cvar('qlx_mybalance_info_interval')))
-                continue
-            time.sleep(1)
 
     @minqlx.thread
     def check_warmup(self, warmup, mapname):
