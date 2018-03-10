@@ -86,10 +86,11 @@ class motd(minqlx.Plugin):
         return minqlx.RET_STOP_EVENT
     
     def cmd_getmotd(self, player, msg, channel):
-        if self.motd_key in self.db:
-            self.send_motd(player, self.db[self.motd_key])
-        else:
+        motd = self.db[self.motd_key]
+        if not motd:
             player.tell("No MOTD has been set.")
+        else:
+            self.send_motd(player, motd)
         return minqlx.RET_STOP_EVENT
 
     def cmd_clearmotd(self, player, msg, channel):
@@ -129,8 +130,7 @@ class motd(minqlx.Plugin):
         return minqlx.RET_STOP_EVENT
 
     def send_motd(self, player, motd):
-        for line in self.get_cvar("qlx_motdHeader").split("\\n"):
-            player.tell(line)
+        player.tell(self.get_cvar("qlx_motdHeader"))
         for line in motd.split("\\n"):
             player.tell(line)
 

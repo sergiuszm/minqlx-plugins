@@ -296,6 +296,9 @@ class player_info(iouonegirlPlugin):
 
         info.append("^3{} ^7{}ELO: ^6{}^7".format(self.game.type_short.upper(),'b' if self.get_cvar('qlx_balanceApi') == 'elo_b' else '', elo, games))
 
+        if target_player.vip:
+            info.append("^1VIP PLAYER!")
+
         return channel.reply("^6{}^7: ".format(name) + "^7, ".join(info) + "^7.")
 
     @minqlx.delay(2)
