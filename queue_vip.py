@@ -86,18 +86,23 @@ class queue_vip(minqlx.Plugin):
         if player not in self._vip_queue and player not in self._queue:
             if pos == -1:
                 self._vip_queue.append(player) if player.vip else self._queue.append(player)
-
             else:
-                self._vip_queue.insert(pos, player) if player.vip else self._queue.insert(pos, player)
-                for p in self._vip_queue:
-                    self.updTag(p, True)
-                for p in self._queue:
-                    self.updTag(p)
+                if player.vip:
+                    self._vip_queue.insert(pos, player)
+                    for p in self._vip_queue:
+                        self.updTag(p, True)
+                else:
+                    self._queue.insert(pos, player)
+                    for p in self._queue:
+                        self.updTag(p)
+
             for p in self.teams()['spectator']:
                 self.center_print(p, "{} joined the VIP Queue".format(player.name)) \
                     if p.vip else self.center_print(p, "{} joined the Queue".format(player.name))
-        if player in self._queue or player in self._vip_queue:
+        if player in self._queue:
             self.center_print(player, "You are in the queue to play")
+        elif player in self._vip_queue:
+            self.center_print(player, "You are in the VIP queue to play")
         self.updTag(player)
         self.pushFromQueue()
 
@@ -110,7 +115,7 @@ class queue_vip(minqlx.Plugin):
             self._queue.remove(player)
 
         for p in self._vip_queue:
-            self.updTag(p)
+            self.updTag(p, True)
         for p in self._queue:
             self.updTag(p)
         if update:
@@ -203,10 +208,10 @@ class queue_vip(minqlx.Plugin):
             if update:
                 self.updTag(player)
 
-    def posInQueue(self, player, vip_queue):
+    def posInQueue(self, player):
         '''Returns position of the player in queue'''
         try:
-            return self._vip_queue.index(player) if vip_queue else self._queue.index(player)
+            return self._vip_queue.index(player) if player.vip else self._queue.index(player)
         except ValueError:
             return -1
 
@@ -225,7 +230,7 @@ class queue_vip(minqlx.Plugin):
             del self._tags[player.steam_id]
 
     # @minqlx.thread
-    def updTag(self, player, vip_queue=False):
+    def updTag(self, player):
         '''Update the tags dictionary and start the set_configstring event for tag to apply'''
 
         @minqlx.next_frame
@@ -235,10 +240,10 @@ class queue_vip(minqlx.Plugin):
 
         if player in self.players():
             addition = ""
-            position = self.posInQueue(player, vip_queue)
+            position = self.posInQueue(player, True if player.vip else False)
 
             if position > -1:
-                addition = 'V({})'.format(position + 1) if vip_queue else '({})'.format(position + 1)
+                addition = 'V({})'.format(position + 1) if player.vip else '({})'.format(position + 1)
             elif player in self._afk:
                 addition = '({})'.format(self.get_cvar("qlx_queueAFKTag"))
             elif self.game.type_short not in TEAM_BASED_GAMETYPES + NONTEAM_BASED_GAMETYPES:
@@ -318,7 +323,7 @@ class queue_vip(minqlx.Plugin):
             self.updTag(p)
 
     def cmd_qversion(self, player, msg, channel):
-        channel.reply('^7This server has installed ^2queue.py {} ^7ver. by ^3Melod^1e^3iro'.format(self.version))
+        channel.reply('^7This server has installed ^2vip_queue.py {} ^7ver. by ^1S^7er^1ch^7io^Q'.format(self.version))
 
     def handle_client_command(self, player, command):
         @minqlx.thread
@@ -381,15 +386,18 @@ class queue_vip(minqlx.Plugin):
         msg = "^7No one in VIP queue and standard queue."
         if self._vip_queue:
             msg = "^4VIP ^1Queue^7 >> "
-            for p in self._vip_queue:
-                msg += '{}^7({}) '.format(p.name, self._queue.index(p))
+            for count, p in enumerate(self._vip_queue, start=1):
+                msg += '{}^7({}) '.format(p.name, count)
             channel.reply(msg)
+            msg = ""
 
         if self._queue:
             msg = "^1Queue^7 >> "
-            for p in self._queue:
-                msg += '{}^7({}) '.format(p.name, self._queue.index(p))
-        channel.reply(msg)
+            for count, p in enumerate(self._queue, start=1):
+                msg += '{}^7({}) '.format(p.name, count)
+
+        if len(msg) > 0:
+            channel.reply(msg)
 
         if self._afk:
             msg = "^3Away^7 >> "
