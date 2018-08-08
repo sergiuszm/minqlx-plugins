@@ -21,6 +21,19 @@ import requests
 import itertools
 import datetime
 
+try:
+    from .iouonegirl import iouonegirlPlugin
+except:
+    try:
+        abs_file_path = os.path.join(os.path.dirname(__file__), "iouonegirl.py")
+        res = requests.get("https://raw.githubusercontent.com/dsverdlo/minqlx-plugins/master/iouonegirl.py")
+        if res.status_code != requests.codes.ok: raise
+        with open(abs_file_path,"a+") as f: f.write(res.text)
+        from .iouonegirl import iouonegirlPlugin
+    except Exception as e :
+        minqlx.CHAT_CHANNEL.reply("^1iouonegirl abstract plugin download failed^7: {}".format(e))
+        raise
+
 PLAYER_ACCESS_KEY = "minqlx:players:{}:access"
 
 
@@ -33,7 +46,7 @@ class access(minqlx.Plugin):
 
         # self.add_command("setaccess", self.cmd_set_access, 5, priority=minqlx.PRI_HIGH, usage="<id> <date_timestamp>")
         self.add_command("vip", self.cmd_get_my_access, priority=minqlx.PRI_LOW)
-        # self.add_command("getaccess", self.cmd_check_player_access, 3, priority=minqlx.PRI_LOW, usage="<id>")
+        self.add_command("checkvip", self.cmd_check_player_access, 3, priority=minqlx.PRI_LOW, usage="<id>")
         # self.add_hook("player_connect", self.handle_player_connect, priority=minqlx.PRI_HIGH)
         self.add_hook("player_loaded", self.handle_player_loaded, priority=minqlx.PRI_LOWEST)
 
@@ -56,28 +69,42 @@ class access(minqlx.Plugin):
         if user_access_date > 0:
             access_date = self.timestamp_to_date(user_access_date)
             if int(time.time()) >= user_access_date:
-                player.reply("^6{}^7, your VIP status expired on ^6{}".format(player.name, access_date))
+                player.tell("^6{}^7, your VIP status expired on ^6{}".format(player.name, access_date))
             else:
-                player.reply("^6{}^7, you have VIP status to ^6{}".format(player.name, access_date))
+                player.tell("^6{}^7, you have VIP status to ^6{}".format(player.name, access_date))
 
         # player.tell("^6{}^7 your access to the server expires on: ^6{}".format(player.name, user_access_date))
 
-    # def cmd_check_player_access(self, player, msg, channel):
-    #     if len(msg) < 2:
-    #         return minqlx.RET_USAGE
-    #
-    #     try:
-    #         sid = int(msg[1])
-    #         assert len(msg[1]) == 17
-    #     except:
-    #         channel.reply("Invalid player's ID!")
-    #         return minqlx.RET_STOP_ALL
-    #
-    #     checked_player = {'steam_id': sid}
-    #
-    #     user_access_date = self.get_access_deadline(checked_player)
-    #
-    #     player.tell("^6{}^7, has access to Cells servers until: ^6{}".format(player.name, user_access_date))
+    def cmd_check_player_access(self, player, msg, channel):
+        if len(msg) < 2:
+            return minqlx.RET_USAGE
+
+        if len(msg) < 2:
+            target_player = player
+        else:
+            try:
+                sid = int(msg[1])
+                assert len(msg[1]) == 17
+                target_player = sid
+            except:
+                target_player = self.find_by_name_or_id(player, msg[1])
+                if not target_player:
+                    return minqlx.RET_STOP_EVENT
+
+        # checked_player = {'steam_id': sid}
+
+        user_access_date = self.get_access_deadline(target_player, True)
+
+        if user_access_date == 0:
+            channel.reply("^6{}^7, never had a ^2VIP ^7status!".format(player.name))
+        else:
+            access_date = self.timestamp_to_date(user_access_date)
+            if int(time.time()) >= user_access_date:
+                channel.reply("^6{}^7 VIP status expired on ^6{}".format(player.name, access_date))
+            else:
+                channel.reply("^6{}^7 has VIP status to ^6{}".format(player.name, access_date))
+
+        # player.tell("^6{}^7, has access to Cells servers until: ^6{}".format(player.name, user_access_date))
 
     def cmd_get_my_access(self, player, msg, channel):
         user_access_date = self.get_access_deadline(player, True)
