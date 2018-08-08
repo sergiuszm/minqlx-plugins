@@ -30,10 +30,18 @@
 import minqlx
 import time
 import threading
+import logging
+from logging.handlers import RotatingFileHandler
+import datetime
+import sys
+import os
+import os.path
+import operator
 
 TEAM_BASED_GAMETYPES = ("ca", "ctf", "dom", "ft", "tdm", "ad", "1f", "har")
 NONTEAM_BASED_GAMETYPES = ("ffa", "race", "rr")
 _tag_key = "minqlx:players:{}:clantag"
+_extended_vip_key = "minqlx:servers:{}:extended_vip"
 
 class queue_vip(minqlx.Plugin):
     def __init__(self):
@@ -71,13 +79,29 @@ class queue_vip(minqlx.Plugin):
         ######## loading during the endgame screen might cause bugs
         self.set_cvar_once("qlx_queueSetAfkPermission", "2")
         self.set_cvar_once("qlx_queueAFKTag", "^3AFK")
+        self.game_port = minqlx.get_cvar("net_port")
+        self.jointimes = {}
+        self._extended_vip = self.check_if_extended_vip()
 
         self.test_logger = minqlx.get_logger()
+        self.qlogger = self._configure_logger()
 
     def initialize(self):
         for p in self.players():
             self.updTag(p)
         self.unlock()
+
+    def check_if_extended_vip(self):
+        try:
+            extended_vip = bool(self.db[_extended_vip_key.format(self.game_port)])
+
+            if extended_vip:
+                return extended_vip
+
+        except KeyError as e:
+            extended_vip = False
+
+        return extended_vip
 
     ## Basic List Handling (Queue and AFK)
     @minqlx.thread
@@ -90,7 +114,7 @@ class queue_vip(minqlx.Plugin):
                 if player.vip:
                     self._vip_queue.insert(pos, player)
                     for p in self._vip_queue:
-                        self.updTag(p, True)
+                        self.updTag(p)
                 else:
                     self._queue.insert(pos, player)
                     for p in self._queue:
@@ -98,7 +122,7 @@ class queue_vip(minqlx.Plugin):
 
             for p in self.teams()['spectator']:
                 self.center_print(p, "{} joined the VIP Queue".format(player.name)) \
-                    if p.vip else self.center_print(p, "{} joined the Queue".format(player.name))
+                    if player.vip else self.center_print(p, "{} joined the Queue".format(player.name))
         if player in self._queue:
             self.center_print(player, "You are in the queue to play")
         elif player in self._vip_queue:
@@ -115,7 +139,7 @@ class queue_vip(minqlx.Plugin):
             self._queue.remove(player)
 
         for p in self._vip_queue:
-            self.updTag(p, True)
+            self.updTag(p)
         for p in self._queue:
             self.updTag(p)
         if update:
@@ -130,14 +154,19 @@ class queue_vip(minqlx.Plugin):
             '''Safely put certain amout of players to the selected team'''
 
             pushToTeam.remaining = amount
+            self.qlogger.debug("pushToTeam.remaining = {}".format(amount))
 
             def popFromQueue(queue):
                 if pushToTeam.remaining == 0:
+                    self.qlogger.debug("pushToTeam.remaining = 0")
                     self.pushFromQueue(0.5)
                     return
 
+                self.qlogger.debug("pushToTeam.remaining = {}".format(pushToTeam.remaining))
                 for count, player in enumerate(queue, start=1):
+                    self.qlogger.debug("{}: Player: {}, IS_VIP: {}".format(count, player.name, player.vip))
                     if player in self.teams()['spectator'] and player.connection_state == 'active':
+                        self.qlogger.debug("{}: Player: {}, from spectator to {}".format(count, player.name, team))
                         # self.test_logger.warning("pop out {}".format(player))
                         queue.pop(0).put(team)
                         pushToTeam.remaining -= 1
@@ -148,12 +177,16 @@ class queue_vip(minqlx.Plugin):
                         return
 
             if not self.is_endscreen:
+                self.qlogger.debug("pushFromQueue -> vip")
                 popFromQueue(self._vip_queue)
+                self.qlogger.debug("pushFromQueue -> normal")
                 popFromQueue(self._queue)
 
         @minqlx.next_frame
         def pushToBoth():
+            self.qlogger.debug("pushToTeam: 1, red")
             pushToTeam(1, "red")
+            self.qlogger.debug("pushToTeam: 1, blue")
             pushToTeam(1, "blue")
 
         @minqlx.next_frame
@@ -163,22 +196,38 @@ class queue_vip(minqlx.Plugin):
             red_amount = len(teams["red"])
             blue_amount = len(teams["blue"])
             free_amount = len(teams["free"])
+            spec_amount = len(teams['spectator'])
 
+            self.qlogger.debug("------------------ checkForPlace ------------------ ")
+            self.qlogger.debug("MAXPLAYERS: {}".format(maxplayers))
+            self.qlogger.debug("RED: {}, BLUE: {}, FREE: {}, SPEC: {}".format(
+                red_amount, blue_amount, free_amount, spec_amount))
             # self.msg("DEBUG max:{} ts:{} red:{} blue{} free:{}".format(maxplayers, self.game.teamsize, red_amount, blue_amount, free_amount))
 
             if self.game.type_short in TEAM_BASED_GAMETYPES:
                 diff = red_amount - blue_amount
+                self.qlogger.debug("red - blue: {}".format(diff))
                 if diff > 0 and not self.is_blue_locked:
+                    self.qlogger.debug("Push to BLUE: {}".format(diff))
                     pushToTeam(diff, "blue")
                 elif diff < 0 and not self.is_red_locked:
+                    self.qlogger.debug("Push to RED: {}".format(-diff))
                     pushToTeam(-diff, "red")
                 elif red_amount + blue_amount < maxplayers:
-                    if (len(self._queue) > 1 or len(self._vip_queue) > 1) and not self.is_blue_locked and not self.is_red_locked:
+                    self.qlogger.debug("Red + Blue < Maxplayers")
+                    self.qlogger.debug("RED: {}, BLUE: {}, MAXPLAYERS: {}, FREE: {}, SPEC: {}, QVIP: {}, QN: {}".format(
+                        red_amount, blue_amount, maxplayers, free_amount, spec_amount, len(self._vip_queue), len(self._queue)
+                    ))
+                    if ((len(self._queue) + len(self._vip_queue)) > 1) and not self.is_blue_locked and not self.is_red_locked:
+                        self.qlogger.debug("(len(self._queue) > 1 or len(self._vip_queue) > 1): pushToBoth()")
                         pushToBoth()  ################ add elo here for those, who want
                     elif self.game.state == 'warmup':  # for the case if there is 1 player in queue
+                        self.qlogger.debug("PUSH on WARMUP to: ")
                         if not self.is_red_locked and red_amount < int(self.game.teamsize):
+                            self.qlogger.debug("RED")
                             pushToTeam(1, "red")
                         elif not self.is_blue_locked and blue_amount < int(self.game.teamsize):
+                            self.qlogger.debug("BLUE")
                             pushToTeam(1, "blue")
 
             elif self.game.type_short in NONTEAM_BASED_GAMETYPES:
@@ -191,6 +240,10 @@ class queue_vip(minqlx.Plugin):
         time.sleep(delay)
         self.is_push_pending = False
 
+        if len(self._vip_queue) > 0 and self.game.state == 'warmup' and self._extended_vip:
+            for p in self._vip_queue:
+                youngest_player = max(self.jointimes, key=lambda key: self.jointimes[key])
+                
         if len(self._vip_queue) == 0 and len(self._queue) == 0:
             return
         if self.game.state != 'in_progress' and self.game.state != 'warmup':
@@ -240,7 +293,9 @@ class queue_vip(minqlx.Plugin):
 
         if player in self.players():
             addition = ""
-            position = self.posInQueue(player, True if player.vip else False)
+            position = self.posInQueue(player)
+            # self.qlogger.debug("TEST")
+            # self.qlogger.debug("POS IN {}_QUEUE: {}".format("VIP" if player.vip else "NORMAL", position + 1))
 
             if position > -1:
                 addition = 'V({})'.format(position + 1) if player.vip else '({})'.format(position + 1)
@@ -270,19 +325,27 @@ class queue_vip(minqlx.Plugin):
 
     ## Plugin Handles and Commands
     def handle_player_disconnect(self, player, reason):
+        if player.steam_id in self.jointimes:
+            del self.jointimes[player.steam_id]
         self.remAFK(player, False)
         self.remFromQueue(player, False)
         self.remTag(player)
         self.pushFromQueue(0.5)
 
     def handle_player_loaded(self, player):
+        self.qlogger.debug("Player loaded: {}".format(player.name))
+        if not player.vip:
+            self.jointimes[player.steam_id] = time.time()
         self.updTag(player)
 
     def handle_team_switch(self, player, old_team, new_team):
+        self.qlogger.debug("handle_team_switch")
         if new_team != "spectator":
+            self.qlogger.debug("new_team != spectator")
             self.remFromQueue(player)
             self.remAFK(player)
         else:
+            self.qlogger.debug("new_team == spectator")
             self.updTag(player)
             self.pushFromQueue(0.5)
 
@@ -383,6 +446,7 @@ class queue_vip(minqlx.Plugin):
         self.is_endscreen = True
 
     def cmd_lq(self, player, msg, channel):
+        self.qlogger.debug("cmd_lq")
         msg = "^7No one in VIP queue and standard queue."
         if self._vip_queue:
             msg = "^4VIP ^1Queue^7 >> "
@@ -440,3 +504,28 @@ class queue_vip(minqlx.Plugin):
         elif text.find('broadcast: print "The BLUE team is now unlocked') != -1:
             self.is_blue_locked = False
             self.pushFromQueue(0.5)
+
+    def _configure_logger(self):
+        logger = logging.getLogger("queue_vip")
+        logger.setLevel(logging.DEBUG)
+
+        # File
+        file_path = os.path.join(minqlx.get_cvar("fs_homepath"), "queue_vip.log")
+        maxlogs = minqlx.Plugin.get_cvar("qlx_logs", int)
+        maxlogsize = minqlx.Plugin.get_cvar("qlx_logsSize", int)
+        file_fmt = logging.Formatter("(%(asctime)s) [%(levelname)s @ %(name)s.%(funcName)s] %(message)s", "%H:%M:%S")
+        file_handler = RotatingFileHandler(file_path, encoding="utf-8", maxBytes=maxlogsize, backupCount=maxlogs)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(file_fmt)
+        logger.addHandler(file_handler)
+        logger.info("============================= queue_vip run @ {} ============================="
+                    .format(datetime.datetime.now()))
+
+        # Console
+        console_fmt = logging.Formatter("[%(name)s.%(funcName)s] %(levelname)s: %(message)s", "%H:%M:%S")
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(console_fmt)
+        logger.addHandler(console_handler)
+
+        return logger
