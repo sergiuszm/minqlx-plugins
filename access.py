@@ -35,11 +35,12 @@ except:
         raise
 
 PLAYER_ACCESS_KEY = "minqlx:players:{}:access"
+VERSION = "3.0"
 
 
-class access(minqlx.Plugin):
+class access(iouonegirlPlugin):
     def __init__(self):
-        super().__init__()
+        super().__init__(self.__class__.__name__, VERSION)
 
         self.requests = {}
         self.request_counter = itertools.count()
