@@ -40,6 +40,7 @@ class balance(minqlx.Plugin):
         self.add_hook("round_countdown", self.handle_round_countdown)
         self.add_hook("round_start", self.handle_round_start)
         self.add_hook("vote_ended", self.handle_vote_ended)
+        self.add_hook("player_loaded", self.handle_player_loaded, priority=minqlx.PRI_LOWEST)
         self.add_command(("setrating", "setelo"), self.cmd_setrating, 3, usage="<id> <rating>")
         self.add_command(("getrating", "getelo", "elo"), self.cmd_getrating, usage="<id> [gametype]")
         self.add_command(("remrating", "remelo"), self.cmd_remrating, 3, usage="<id>")
@@ -60,13 +61,21 @@ class balance(minqlx.Plugin):
         self.in_countdown = False
 
         self.set_cvar_once("qlx_balanceUseLocal", "1")
-        self.set_cvar_once("qlx_balanceUrl", "qlstats.net")
+        self.set_cvar_once("qlx_balanceUrl", "127.0.0.1:8888")
         self.set_cvar_once("qlx_balanceAuto", "1")
         self.set_cvar_once("qlx_balanceMinimumSuggestionDiff", "25")
         self.set_cvar_once("qlx_balanceApi", "elo")
 
         self.use_local = self.get_cvar("qlx_balanceUseLocal", bool)
         self.api_url = "http://{}/{}/".format(self.get_cvar("qlx_balanceUrl"), self.get_cvar("qlx_balanceApi"))
+
+    @minqlx.delay(5)
+    def handle_player_loaded(self, player):
+        gt = self.game.type_short
+        if gt not in EXT_SUPPORTED_GAMETYPES:
+            return minqlx.RET_STOP_ALL
+
+        self.add_request({player.steam_id: gt}, self.callback_getrating, None, gt)
 
     def handle_round_countdown(self, *args, **kwargs):
         if all(self.suggested_agree):
@@ -247,8 +256,10 @@ class balance(minqlx.Plugin):
             name = player.name
         else:
             name = sid
-        
-        channel.reply("{} has a rating of ^6{}^7 in {}.".format(name, self.ratings[sid][gametype]["elo"], gametype.upper()))
+
+        if channel is not None:
+            channel.reply(
+                "{} has a rating of ^6{}^7 in {}.".format(name, self.ratings[sid][gametype]["elo"], gametype.upper()))
 
     def cmd_setrating(self, player, msg, channel):
         if len(msg) < 3:
