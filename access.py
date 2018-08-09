@@ -97,13 +97,13 @@ class access(iouonegirlPlugin):
         user_access_date = self.get_access_deadline(target_player, True)
 
         if user_access_date == 0:
-            channel.reply("^6{}^7, never had a ^2VIP ^7status!".format(player.name))
+            channel.reply("^6{}^7, never had a ^2VIP ^7status!".format(target_player.name))
         else:
             access_date = self.timestamp_to_date(user_access_date)
             if int(time.time()) >= user_access_date:
-                channel.reply("^6{}^7 VIP status expired on ^6{}".format(player.name, access_date))
+                channel.reply("^6{}^7 VIP status expired on ^6{}".format(target_player.name, access_date))
             else:
-                channel.reply("^6{}^7 has VIP status to ^6{}".format(player.name, access_date))
+                channel.reply("^6{}^7 has VIP status to ^6{}".format(target_player.name, access_date))
 
         # player.tell("^6{}^7, has access to Cells servers until: ^6{}".format(player.name, user_access_date))
 
