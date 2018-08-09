@@ -1181,7 +1181,7 @@ class mybalance(iouonegirlPlugin):
         last_status = 0
         while attempts < MAX_ATTEMPTS:
             attempts += 1
-            url = "http://qlstats.net/{elo}/{}".format(sid, elo=self.get_cvar('qlx_balanceApi'))
+            url = "http://127.0.0.1:8888/{elo}/{}".format(sid, elo=self.get_cvar('qlx_balanceApi'))
             res = requests.get(url)
             last_status = res.status_code
             if res.status_code != requests.codes.ok:
@@ -1405,6 +1405,6 @@ class ConnectThread(threading.Thread):
         self._player = player
         self._result = None
     def run(self):
-        url = "http://qlstats.net/{elo}/{}".format(self._player.steam_id, elo=self._plugin.get_cvar('qlx_balanceApi'))
+        url = "http://127.0.0.1:8888/{elo}/{}".format(self._player.steam_id, elo=self._plugin.get_cvar('qlx_balanceApi'))
         self._result = requests.get(url)
 
